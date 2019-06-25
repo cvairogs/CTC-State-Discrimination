@@ -89,8 +89,8 @@ def partialTrace(tensor): #particular to this case
     returnMatrix = np.matrix(returnMatrixArray)
     return returnMatrix
 
-Nq = 50
-gamma = 0
+Nq = 2000
+gamma = .9
 registerVector = np.matrix([[math.sqrt(gamma)], [math.sqrt(1-gamma)]])
 inputStates = [zero, minus]
 inputStatesProbWeights = [0, 1]
@@ -144,7 +144,7 @@ for i in range(Nq):
         pN += epsilon*inputStatesProbWeights[inputIndex]
         
     plt.scatter(i+1, math.log(1-pN), s= 30, c= 'r', alpha = 0.5)
-    P = (1-initCTCProbWeights[1]*(1+gamma)**(i+1)/2**(i+1))*inputStatesProbWeights[0] + (1-initCTCProbWeights[0]*(1+gamma)**(i+1)/2**(i+1))*inputStatesProbWeights[1]
+    #P = (1-initCTCProbWeights[1]*(1+gamma)**(i+1)/2**(i+1))*inputStatesProbWeights[0] + (1-initCTCProbWeights[0]*(1+gamma)**(i+1)/2**(i+1))*inputStatesProbWeights[1]
     #plt.scatter(i+1, P, s= 30, c = 'b', alpha = 0.5)
     
 x=np.arange(1.0, Nq, 0.02)
