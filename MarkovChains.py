@@ -2,9 +2,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 import random
+import cmath
 
-zero = np.matrix([[1], [0]])
-one = np.matrix([[0], [1]])
+##zero = np.matrix([[1], [0]])
+##one = np.matrix([[0], [1]])
+zero = np.matrix([[1], [0], [0]])
+one = np.matrix([[0], [1], [0]])
+two = np.matrix([[0], [0], [1]])
 plus = np.matrix([[1/math.sqrt(2)], [1/math.sqrt(2)]])
 minus = np.matrix([[1/math.sqrt(2)], [-1/math.sqrt(2)]])
 HAD = 1/math.sqrt(2)*np.matrix([[1,1],[1,-1]])
@@ -129,16 +133,24 @@ def projection(ket, basis):
 def ketApproxEqual(ket1, ket2, epsilon):
     result = True
     for i in range(ket1.shape[0]):
+##        print(ket1[i,0])
+##        print(ket2[i,0])
         if abs(ket1[i, 0] - ket2[i, 0])>epsilon:
             result = False
             
     return result
 
 def innerP(ket1, ket2):
-    return trace(ket1.T*ket2)
+    return trace(ket1.getH()*ket2)
 
 def maxMixedState(dim):
     return identityMatrix(dim)/dim
+
+def maxMixedArray(dim):
+    returnArray = []
+    for i in range(dim):
+        returnArray.append(1/dim)
+    return returnArray
 
 def genRandVector(dim): #dim is dimension
     elements = []
@@ -215,23 +227,35 @@ def generateUnitaries(inputBasisVectors, inputStates):
             for n in range(len(bmBasis)):
                 outerPSum = outerPSum + outerP(bmBasis[n])
             vector = inputStates[index] - outerPSum*inputStates[index]
-            if(norm(vector)>0):
+            trig = False
+            if(norm(vector)>10**(-3)):
                 vector = vector/norm(vector)
                 '''the process works if a set of input states is chosen such that vector may turn out to be the zero vector. Example: linearly dependent non orthogonal states'''
-            bmBasis.append(vector)
+                bmBasis.append(vector)
+                trig = True
          
             Sum = np.matrix(zeroMatrixArray(M, 1))
             counter = 0
+            #print(trig)
             
             for m in range(M):
                 '''cycles through all vectors in set of input states and selects ones not used yet. A state may be spanned by bmBasis if its
                 projection onto bmBasis is equal to itself.'''
-                if (ketApproxEqual(projection(inputStates[m], bmBasis), inputStates[m], 10**(-8)) and not(m in usedStates)):
+                if (ketApproxEqual(projection(inputStates[m], bmBasis), inputStates[m], 10**(-7)) and not(m in usedStates)):
                     Sum = Sum + inputBasisVectors[m]
                     counter+=1
 
             #counter is guaranteed to be non-zero
-            cmBasis.append(1/math.sqrt(counter)*Sum)
+            try:
+                cmBasis.append(1/math.sqrt(counter)*Sum)
+            except ZeroDivisionError:
+                print("ZERO DIVISION ERROR")
+                for i in range(len(bmBasis)):
+                    for j in range(len(bmBasis)):
+                        if (i!=j):
+                            print(innerP(bmBasis[i], bmBasis[j]))
+                print(inputStates)
+                print(trig)
             usedStates.append(index)
             
         U=np.matrix(zeroMatrixArray(M, M))
@@ -255,6 +279,24 @@ def probTransMatrix(inputBasisVectors, inputState, unitaries):
 def probTransMatrixN(N, inputBasisVectors, inputState, unitaries):
     pMatrix = probTransMatrix(inputBasisVectors, inputState, unitaries)
     return pMatrix**N
+
+def QMatrix(inputBasisVectors, inputStateIndex, inputState, unitaries):
+    dim = len(inputBasisVectors)
+    qMatrix = zeroMatrixArray(dim-1, dim-1)
+    k = inputStateIndex
+    for i in range(dim-1):
+        for j in range(dim-1):
+            element = 0
+            if (i<k and j<k):
+                element = abs((inputBasisVectors[j].getH()*unitaries[i]*inputState)[0,0])**2
+            if (i>=k and j<k):
+                element = abs((inputBasisVectors[j].getH()*unitaries[i+1]*inputState)[0,0])**2
+            if (i<k and j>=k):
+                element = abs((inputBasisVectors[j+1].getH()*unitaries[i]*inputState)[0,0])**2
+            if (i>=k and j>=k):
+                element = abs((inputBasisVectors[j+1].getH()*unitaries[i+1]*inputState)[0,0])**2
+            qMatrix[i][j] = element
+    return np.matrix(qMatrix)
 
 #plots average probability of success. All arguments besides color and Nq accepted as lists
 def plotGraphAvgProbMarkov(Nq, inputBasisVectors, inputProbWeights, CTCProbWeights, inputStates, unitaries, color):
@@ -293,7 +335,7 @@ def optimizeCTC(N, inputBasisVectors, inputProbWeights, inputStates, unitaries):
     for i in range(dim): #loops through CTC coefficients. Process corresponds to (12) in the notes 
         quantity = 0
         for j in range(dim):
-            quantity += inputProbWeights[j]*pMatrices[i][i, j] #finds coefficient of CTC coefficient
+            quantity += inputProbWeights[j]*pMatrices[j][i, j] #finds coefficient of CTC coefficient
         if(quantity>Max):
             Max = quantity
             index = i
@@ -303,21 +345,302 @@ def optimizeCTC(N, inputBasisVectors, inputProbWeights, inputStates, unitaries):
     plotGraphAvgProbMarkov(N, inputBasisVectors, inputProbWeights, CTCProbWeights, inputStates, unitaries, 'r') #plots optimized curve in red
     plotGraphAvgProbMarkov(N, inputBasisVectors, inputProbWeights, maxMixedState, inputStates, unitaries, 'b') #plots curve with CTC initialized to maximally mixed state in blue
 
+def calculateAverageSuccessProb(N, CTCProbWeights, inputBasisVectors, inputPWeights, inputStates, unitaries):
+    averageProb=0
+    CTCProbWeights = np.matrix([CTCProbWeights])
+    dim = len(inputBasisVectors)
+    for j in range(dim):
+        inputStateIndex = j
+        pN=probTransMatrixN(N, inputBasisVectors, inputStates[j], unitaries)
+##        print("prob trans matrix for " + str(inputStates[j]))
+##        print(probTransMatrix(inputBasisVectors, inputStates[j], unitaries))
+        uN= CTCProbWeights*pN #CTCProbWeights is denoted as matrix u in notes
+        Sum = 0 
+        
+        Sum+=uN[0, inputStateIndex]
+        averageProb+=inputPWeights[inputStateIndex]*Sum
+    return averageProb
+
+
+##Helper functions for optimization
+##==========================================
+
+##def calculateAverageErrorProb2D(N, phiVector, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates):
+##    phi1 = phiVector[0][0]
+##    phi2 = phiVector[1][0]
+##    phi3 = phiVector[2][0]
+##    phi4 = phiVector[3][0]
+##
+##    b10 = inputStates[0]
+##    b20 = inputStates[1] - outerP(b10)*inputStates[1]
+##    b20 /=norm(b20)
+##
+##    b11 = inputStates[1]
+##    b21 = inputStates[0] - outerP(b11)*inputStates[0]
+##    b21/=norm(b21)
+##
+##    U0 = cmath.exp(1j*phi1)*zero*b10.getH() + cmath.exp(1j*(phi2-phi1))*one*b20.getH() 
+##    U1 = cmath.exp(1j*phi3)*one*b11.getH() - cmath.exp(1j*(phi4-phi3))*zero*b21.getH()
+##
+##    unitaries = [U0, U1]
+##
+##    prob = 1- calculateAverageSuccessProb(N, CTCProbWeights, inputBasisVectors, inputProbWeights, inputStates, unitaries)
+##    return [prob, unitaries]
+
+def calculateAverageErrorProb3D(N, phiVector, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates):
+    phi1 = phiVector[0][0]
+    phi2 = phiVector[1][0]
+    phi3 = phiVector[2][0]
+    phi4 = phiVector[3][0]
+    phi5 = phiVector[4][0]
+    phi6 = phiVector[5][0]
+    phi7 = phiVector[6][0]
+    phi8 = phiVector[7][0]
+    phi9 = phiVector[8][0]
+    phi10 = phiVector[9][0]
+    phi11 = phiVector[10][0]
+    phi12 = phiVector[11][0]
+    phi13 = phiVector[12][0]
+    phi14 = phiVector[13][0]
+    phi15 = phiVector[14][0]
+    
+
+    b10 = inputStates[0]
+    b20 = inputStates[1] - outerP(b10)*inputStates[1]
+    b20 /=norm(b20)
+    b30 = inputStates[2] - (outerP(b20)+outerP(b10))*inputStates[2]
+    b30 /=norm(b30)
+
+    b11 = inputStates[1]
+    b21 = inputStates[0] - outerP(b11)*inputStates[0]
+    b21/=norm(b21)
+    b31 = inputStates[2] - (outerP(b11) + outerP(b21))*inputStates[2]
+    b31 /= norm(b31)
+
+    b12 = inputStates[2]
+    b22 = inputStates[1] - outerP(b12)*inputStates[1]
+    b22 /= norm(b22)
+    b32 = inputStates[0] - (outerP(b12) + outerP(b22))*inputStates[0]
+    b32 /= norm(b32)
+    
+    U0 = cmath.exp(1j*phi1)*zero*b10.getH() + 1/math.sqrt(2)*(cmath.exp(1j*(phi2))*one + cmath.exp(1j*phi4)*two)*b20.getH() + 1/math.sqrt(2)*(cmath.exp(1j*phi3)*one+cmath.exp(1j*phi5)*two)*b30.getH()
+    U1 = cmath.exp(1j*phi6)*one*b11.getH() + 1/math.sqrt(2)*(cmath.exp(1j*phi7)*zero + cmath.exp(1j*phi9)*two)*b21.getH() + 1/math.sqrt(2)*(cmath.exp(1j*phi8)*zero+cmath.exp(1j*phi10)*two)*b31.getH()
+    U2 = cmath.exp(1j*phi11)*two*b12.getH() + 1/math.sqrt(2)*(cmath.exp(1j*phi12)*zero + cmath.exp(1j*phi14)*one)*b22.getH() + 1/math.sqrt(2)*(cmath.exp(1j*phi13)*zero + cmath.exp(1j*phi15)*one)*b32.getH()
+        
+    unitaries = [U0, U1, U2]
+
+    prob = 1-calculateAverageSuccessProb(N, CTCProbWeights, inputBasisVectors, inputProbWeights, inputStates, unitaries)
+    return [prob, unitaries]
+
+##def gradAverageErrorProb(N, phiVector, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates):
+##    dPhi = .01
+##    grad = [[0],[0],[0],[0]]
+##
+##    p = calculateAverageErrorProb2D(N, phiVector, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates)
+##    for i in range(3):
+##        phiVector[i][0] += dPhi
+##        pNew = calculateAverageErrorProb2D(N, phiVector, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates)
+##        grad[i][0] = (pNew - p)/dPhi
+##        phiVector[i][0] -= dPhi
+##
+##    return grad
+
+
+##def optimizeUnitariesFixedCTC(N, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates):
+##    dStep = 0.01
+##    zeroVector = np.matrix([[0],[0],[0],[0]])
+##
+##    phiVector = [[random.uniform(0, 2*math.pi)],[random.uniform(0, 2*math.pi)], [random.uniform(0, 2*math.pi)],[random.uniform(0, 2*math.pi)]]
+##    gradP = gradAverageErrorProb(N, phiVector, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates)
+##
+##    
+##    while (not ketApproxEqual(np.matrix(gradP), zeroVector, 10**(-3))):
+##        P = calculateAverageErrorProb2D(N, phiVector, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates)
+##        gradP = gradAverageErrorProb(N, phiVector, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates)
+##        for i in range(3):
+##            phiVector[i][0] -= dStep*gradP[i][0]
+##            print("one iteration")
+
+##def displayAllPs(N, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates):
+##    dPhi = .1
+##    phi1 = 0
+##    phi2 = 0
+##    phi3 = 0
+##    phi4 = 0
+##    for i in range(math.floor(2*math.pi/dPhi)):
+##        phi1 = i*dPhi
+##        for j in range(math.floor(2*math.pi/dPhi)):
+##            phi2 = j*dPhi
+##            for l in range(math.floor(2*math.pi/dPhi)):
+##                phi3 = l*dPhi
+##                for m in range(math.floor(2*math.pi/dPhi)):
+##                    phi4 = m*dPhi
+##
+##                    phiVector = [[phi1],[phi2],[phi3],[phi4]]
+##                    P=calculateAverageErrorProb2D(N, phiVector, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates)[0]
+##                    unitaries = calculateAverageErrorProb2D(N, phiVector, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates)[1]
+##                    U0 = unitaries[0]
+##                    U1 = unitaries[1]
+####                    print(P)
+####                    print(U0)
+####                    print(U1)
+####                    print("trans matrix 1: ")
+####                    print(probTransMatrix(inputBasisVectors, inputStates[0], unitaries))
+####                    print("trans matrix 2: ")
+####                    print(probTransMatrix(inputBasisVectors, inputStates[1], unitaries))
+        
+
+def gradAverageErrorProb3D(N, phiVector, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates):
+    dPhi = 0.01
+    grad = [[0],[0],[0],[0],[0],[0],[0],[0],[0],[0],[0],[0],[0],[0],[0]]
+
+    p = calculateAverageErrorProb3D(N, phiVector, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates)[0]
+    for i in range(15):
+        if (i!=4 and i!=9 and i!=14):
+            phiVector[i][0] += dPhi
+            pNew = calculateAverageErrorProb3D(N, phiVector, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates)[0]
+            #print((pNew - p)/dPhi)
+            grad[i][0] = (pNew - p)/dPhi
+            phiVector[i][0] -= dPhi
+        else:
+            grad[i][0] = 0
+
+    #print('gradient is ')
+    return grad
+
+def optimizeUnitariesFixedCTC3D(N, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates):
+    dStep = .01
+    zeroVector = np.matrix([[0],[0],[0],[0],[0],[0],[0],[0],[0],[0],[0],[0],[0],[0],[0]])
+
+    phi1 = random.uniform(0, 2*math.pi)
+    phi2 = random.uniform(0, 2*math.pi)
+    phi3 = random.uniform(0, 2*math.pi)
+    phi4 = random.uniform(0, 2*math.pi)
+    phi5 = phi4 - phi2 + math.pi + phi3
+    phi6 = random.uniform(0, 2*math.pi)
+    phi7 = random.uniform(0, 2*math.pi)
+    phi8 = random.uniform(0, 2*math.pi)
+    phi9 = random.uniform(0, 2*math.pi)
+    phi10 = phi9 - phi7 + math.pi + phi8
+    phi11 = random.uniform(0, 2*math.pi)
+    phi12 = random.uniform(0, 2*math.pi)
+    phi13 = random.uniform(0, 2*math.pi)
+    phi14 = random.uniform(0, 2*math.pi)
+    phi15 = phi14 - phi12 + math.pi + phi13
+    phiVector = [[phi1], [phi2], [phi3], [phi4], [phi5], [phi6], [phi7], [phi8], [phi9], [phi10], [phi11], [phi12], [phi13], [phi14], [phi15]]
+    
+    gradP = gradAverageErrorProb3D(N, phiVector, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates)
+
+    
+    while (not ketApproxEqual(np.matrix(gradP), zeroVector, 10**(-3))):
+        P = calculateAverageErrorProb3D(N, phiVector, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates)[0]
+        gradP = gradAverageErrorProb3D(N, phiVector, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates)
+        gradPCopy = np.matrix(gradP)
+        
+        gradPCopy /= norm(gradPCopy)
+        for i in range(15):
+            if (i!=4 and i!= 9 and i!= 14):
+                phiVector[i][0] -= dStep*gradPCopy[i, 0]
+            else:
+                phiVector[i][0] = phiVector[i-1][0] - phiVector[i-3][0] + math.pi + phiVector[i-2][0]
+    
+        print("norm " + str(norm(np.matrix(gradP))))
+
+
+    return calculateAverageErrorProb3D(N, phiVector, CTCProbWeights, inputProbWeights, inputBasisVectors, inputStates)[1]
+            
+
+
+           
+
+
+
 #Markov method applied for BB84 states
     
-I=identityMatrix(2)
-unitaries = [SWAP, tensorP(X,X), tensorP(X,I)*tensorP(HAD,I), tensorP(X,HAD)*SWAP]
-inputBasisVectors = [tensorP(zero, zero),
-                     tensorP(zero, one),
-                     tensorP(one, zero),
-                     tensorP(one, one)]
-BB84InputStates = [tensorP(zero, zero), tensorP(one, zero), tensorP(plus, zero), tensorP(minus, zero)]
-print(probTransMatrix(inputBasisVectors, BB84InputStates[0], unitaries))
-CTCProbWeights = [.25, .25, .25, .25] #1/4*(|00> + |01> + |10> + |11>)
-inputProbWeights = [.85, .05, .05, .05]
-Nq = 100
-#plotGraphAvgProbMarkov(Nq, inputBasisVectors, inputProbWeights, CTCProbWeights, BB84InputStates, unitaries, 'g')
-optimizeCTC(Nq, inputBasisVectors, inputProbWeights, BB84InputStates, unitaries)
+##I=identityMatrix(2)
+##unitaries = [SWAP, tensorP(X,X), tensorP(X,I)*tensorP(HAD,I), tensorP(X,HAD)*SWAP]
+##inputBasisVectors = [tensorP(zero, zero),
+##                     tensorP(zero, one),
+##                     tensorP(one, zero),
+##                     tensorP(one, one)]
+##BB84InputStates = [tensorP(zero, zero), tensorP(one, zero), tensorP(plus, zero), tensorP(minus, zero)]
+##print(probTransMatrix(inputBasisVectors, BB84InputStates[0], unitaries))
+##CTCProbWeights = [.25, .25, .25, .25] #1/4*(|00> + |01> + |10> + |11>)
+##inputProbWeights = [.85, .05, .05, .05]
+##Nq = 100
+###plotGraphAvgProbMarkov(Nq, inputBasisVectors, inputProbWeights, CTCProbWeights, BB84InputStates, unitaries, 'g')
+##optimizeCTC(Nq, inputBasisVectors, inputProbWeights, BB84InputStates, unitaries)
+
+dim = 25
+
+
+##for i in range(500):
+##    inputBasisVectors = generateInputBasisVectors(dim)
+##    inputStates = generateInputStates(dim)
+##    unitaries = generateUnitaries(inputBasisVectors, inputStates)
+##    CTCProbWeights = [1,0]
+##    inputProbWeights = [.5,.5]
+##    Nq = 10
+##
+##    error = 1-calculateAverageSuccessProb(Nq, CTCProbWeights, inputBasisVectors, inputProbWeights, inputStates, unitaries)
+##
+##    fidelity = 0
+##    counter=0
+##    for i in range(dim):
+##        for j in range(i, dim):
+##            if(i!=j):
+##                fidelity+=abs(innerP(inputStates[i], inputStates[j]))**2
+##                counter+=1
+##    fidelity/=counter
+##    
+##    plt.scatter(fidelity, error, s=30, c = 'g', alpha = 0.5)
+
+for i in range(100000):
+    inputBasisVectors = generateInputBasisVectors(dim)
+    inputStates = generateInputStates(dim)
+    unitaries = generateUnitaries(inputBasisVectors, inputStates)
+    CTCProbWeights = maxMixedArray(dim)
+    inputProbWeights = maxMixedArray(dim)
+    Nq = 10
+
+    inputStateIndex = 3
+    Q = QMatrix(inputBasisVectors, inputStateIndex, inputStates[inputStateIndex], unitaries)
+    #P = probTransMatrix(inputBasisVectors, inputStates[inputStateIndex], unitaries)
+    e, v = np.linalg.eig(Q)
+    #print(e)
+    print(Q)
+    print(e)
+    if (len(e)<dim-1):
+        print("error")
+        print(Q)
+        print(e)
+        print("here")
+        break
+    
+    triggered = False
+    for i in range(len(e)-1):
+        for j in range(i+1, len(e)):
+            if abs(e[i]-e[j])<10**(-6):
+                print("error")
+                print(Q)
+                print(e)
+                triggered = True
+
+    if (triggered == True):
+        break
+    
+
+'''
+unitaries1 = optimizeUnitariesFixedCTC3D(Nq, [1,0,0], inputProbWeights, inputBasisVectors, inputStates)
+unitaries2 = optimizeUnitariesFixedCTC3D(Nq, [0,1,0], inputProbWeights, inputBasisVectors, inputStates)
+unitaries3 = optimizeUnitariesFixedCTC3D(Nq, [0,0,1], inputProbWeights, inputBasisVectors, inputStates)
+
+plotGraphAvgProbMarkov(Nq, inputBasisVectors, inputProbWeights, CTCProbWeights, inputStates, unitaries, 'g')
+plotGraphAvgProbMarkov(Nq, inputBasisVectors, inputProbWeights, CTCProbWeights, inputStates, unitaries1, 'r')
+plotGraphAvgProbMarkov(Nq, inputBasisVectors, inputProbWeights, CTCProbWeights, inputStates, unitaries2, 'b')
+plotGraphAvgProbMarkov(Nq, inputBasisVectors, inputProbWeights, CTCProbWeights, inputStates, unitaries3, 'c')
+'''
+
 
 plt.show()
 
